@@ -5,6 +5,7 @@ const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion 
 const QRCode = require('qrcode');
 
 const STATUS_FILE = 'status.json';
+let monitoringStarted = false;
 
 // 🕌 إرسال الصلاة لجميع الجروبات
 async function sendToAllGroups(sock) {
@@ -38,7 +39,7 @@ async function fetchPrayerTimes() {
   }
 }
 
-// 🧠 تحقق من الصلوات الفائتة وإرسال Salawat
+// 🧠 تحقق من الصلوات الفائتة وإرسال Salawat مرة وحدة
 function monitorPrayerTimes(sock) {
   setInterval(async () => {
     const now = moment().tz("Africa/Casablanca");
@@ -52,11 +53,15 @@ function monitorPrayerTimes(sock) {
       const [hour, minute] = timeStr.split(':').map(Number);
       const prayerTime = moment().tz("Africa/Casablanca").set({ hour, minute, second: 0 });
 
-      // إذا فات وقت الصلاة وما تصيفطاتش، نرسلها
-      if (now.isAfter(prayerTime) && !status[name]) {
+      const alreadySentAt = status[name + '_sentAt'];
+      const sentRecently = alreadySentAt && now.diff(moment(alreadySentAt, "HH:mm:ss"), 'minutes') < 2;
+
+      if (now.isAfter(prayerTime) && !status[name] && !sentRecently) {
         await sendToAllGroups(sock);
         status[name] = true;
+        status[name + '_sentAt'] = now.format("HH:mm:ss");
         fs.writeFileSync(STATUS_FILE, JSON.stringify(status));
+        console.log(`📤 تم إرسال الصلاة على النبي بعد ${name}`);
       }
     }
   }, 60 * 1000); // كل دقيقة
@@ -102,8 +107,13 @@ async function startBot() {
 
       if (connection === 'open') {
         console.log('✅ WhatsApp connection established');
-        monitorPrayerTimes(sock);
-        resetPrayerStatusDaily();
+
+        if (!monitoringStarted) {
+          monitorPrayerTimes(sock);
+          resetPrayerStatusDaily();
+          monitoringStarted = true;
+          console.log('📡 مراقبة مواقيت الصلاة بدأت');
+        }
       }
     });
 
