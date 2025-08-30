@@ -8,7 +8,7 @@ app.get('/', (req, res) => {
 });
 
 // 🔁 Self-ping كل 5 دقايق باش يبقى Replit نشيط
-const baseUrl = 'https://e8489022-3b80-41a2-a87e-e7413ab910c3-00-38cup8jc7xayp.spock.replit.dev/';
+const baseUrl = 'https://prayer-bot-f2uk.onrender.com/';
 
 setInterval(() => {
   axios.get(baseUrl)
