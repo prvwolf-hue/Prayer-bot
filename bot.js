@@ -1,3 +1,4 @@
+const QRCode = require("qrcode");
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require("@whiskeysockets/baileys");
 const { Boom } = require("@hapi/boom");
 const fs = require("fs");
@@ -67,9 +68,17 @@ async function startBot() {
   sock.ev.on("connection.update", (update) => {
     const { connection, lastDisconnect, qr } = update;
 
-    if (qr) {
-      console.log("📱 QR Code:", qr); // عرض QR إذا احتجت تسكانه من جديد
+  if (qr) {
+  console.log("📱 QR Code received. Generating image...");
+
+  QRCode.toFile("qr.png", qr, (err) => {
+    if (err) {
+      console.error("❌ فشل توليد صورة QR:", err.message);
+    } else {
+      console.log("✅ تم حفظ صورة QR باسم qr.png. يمكنك تسكانها من تطبيق WhatsApp.");
     }
+  });
+}
 
     if (connection === "close") {
       const reason = new Boom(lastDisconnect?.error)?.output?.statusCode;
