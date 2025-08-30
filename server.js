@@ -19,5 +19,5 @@ setInterval(() => {
 // 🚀 تشغيل السيرفر
 app.listen(3000, () => {
   console.log('✅ KeepAlive server running on port 3000');
-  console.log(`🌐 Access your bot at: ${baseUrl}`);
+  console.log(`🌐 Access your bot at: https://prayer-bot-f2uk.onrender.com`);
 });
