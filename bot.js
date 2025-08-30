@@ -68,17 +68,16 @@ async function startBot() {
   sock.ev.on("connection.update", (update) => {
     const { connection, lastDisconnect, qr } = update;
 
-  if (qr) {
-  console.log("📱 QR Code received. Generating image...");
-
-  QRCode.toFile("qr.png", qr, (err) => {
-    if (err) {
-      console.error("❌ فشل توليد صورة QR:", err.message);
-    } else {
-      console.log("✅ تم حفظ صورة QR باسم qr.png. يمكنك تسكانها من تطبيق WhatsApp.");
+    if (qr) {
+      console.log("📱 QR Code received. Rendering in terminal...");
+      QRCode.toString(qr, { type: "terminal" }, (err, asciiQR) => {
+        if (err) {
+          console.error("❌ فشل توليد QR:", err.message);
+        } else {
+          console.log(asciiQR); // يطبع QR ASCII قابل للسكان من التيرمينال
+        }
+      });
     }
-  });
-}
 
     if (connection === "close") {
       const reason = new Boom(lastDisconnect?.error)?.output?.statusCode;
@@ -97,3 +96,4 @@ async function startBot() {
 }
 
 startBot();
+
