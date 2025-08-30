@@ -7,10 +7,12 @@ const QRCode = require('qrcode');
 const STATUS_FILE = 'status.json';
 
 // 🕌 إرسال الصلاة لجميع الجروبات
-async function sendToAllGroups(text, sock) {
+async function sendToAllGroups(sock) {
   const chats = await sock.groupFetchAllParticipating();
   for (const groupId of Object.keys(chats)) {
-    await sock.sendMessage(groupId, { text });
+    await sock.sendMessage(groupId, {
+      text: 'اللَّهُمَّ صَلِّ وَسَلِّمْ عَلَى نَبِيِّنَا مُحَمَّدٍ'
+    });
   }
 }
 
@@ -36,32 +38,39 @@ async function fetchPrayerTimes() {
   }
 }
 
-// 🧠 تحقق من الصلاة القادمة وإرسال Salawat
+// 🧠 تحقق من الصلوات الفائتة وإرسال Salawat
 function monitorPrayerTimes(sock) {
   setInterval(async () => {
     const now = moment().tz("Africa/Casablanca");
-    const currentTime = now.format("HH:mm");
     const times = await fetchPrayerTimes();
+
+    let status = fs.existsSync(STATUS_FILE)
+      ? JSON.parse(fs.readFileSync(STATUS_FILE))
+      : {};
 
     for (const [name, timeStr] of Object.entries(times)) {
       const [hour, minute] = timeStr.split(':').map(Number);
       const prayerTime = moment().tz("Africa/Casablanca").set({ hour, minute, second: 0 });
 
-      const diff = prayerTime.diff(now, 'minutes');
-
-      // إذا بقينا 5 دقايق أو أقل على الصلاة، نرسل Salawat
-      if (diff >= 0 && diff <= 5) {
-        const lastSent = fs.existsSync(STATUS_FILE)
-          ? moment(JSON.parse(fs.readFileSync(STATUS_FILE)).lastSalawatSent)
-          : moment().subtract(1, 'day');
-
-        if (now.diff(lastSent, 'minutes') > 60) {
-          await sendToAllGroups(`🕌 اقترب وقت صلاة ${name}، لا تنسَ الصلاة على النبي ﷺ`, sock);
-          fs.writeFileSync(STATUS_FILE, JSON.stringify({ lastSalawatSent: now.toISOString() }));
-        }
+      // إذا فات وقت الصلاة وما تصيفطاتش، نرسلها
+      if (now.isAfter(prayerTime) && !status[name]) {
+        await sendToAllGroups(sock);
+        status[name] = true;
+        fs.writeFileSync(STATUS_FILE, JSON.stringify(status));
       }
     }
   }, 60 * 1000); // كل دقيقة
+}
+
+// 🔄 إعادة تعيين الحالة يومياً
+function resetPrayerStatusDaily() {
+  setInterval(() => {
+    const now = moment().tz("Africa/Casablanca");
+    if (now.format("HH:mm") === "00:01") {
+      fs.writeFileSync(STATUS_FILE, JSON.stringify({}));
+      console.log("🔄 تم إعادة تعيين حالة الصلوات لليوم الجديد");
+    }
+  }, 60 * 1000);
 }
 
 // 🔌 تشغيل البوت
@@ -93,7 +102,8 @@ async function startBot() {
 
       if (connection === 'open') {
         console.log('✅ WhatsApp connection established');
-        monitorPrayerTimes(sock); // مراقبة مستمرة للصلاة
+        monitorPrayerTimes(sock);
+        resetPrayerStatusDaily();
       }
     });
 
