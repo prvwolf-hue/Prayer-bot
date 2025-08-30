@@ -1,137 +1,74 @@
-const axios = require('axios');
-const fs = require('fs');
-const moment = require('moment-timezone');
-const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
-const QRCode = require('qrcode');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require("@whiskeysockets/baileys");
+const { Boom } = require("@hapi/boom");
+const fs = require("fs");
+const moment = require("moment-timezone");
 
-const STATUS_FILE = 'status.json';
-let monitoringStarted = false;
+const STATUS_FILE = "./status.json";
+const SALAWAT_MESSAGE = "اللَّهُمَّ صَلِّ وَسَلِّمْ عَلَى نَبِيِّنَا مُحَمَّدٍ";
 
-// 🕌 إرسال الصلاة لجميع الجروبات
 async function sendToAllGroups(sock) {
   const chats = await sock.groupFetchAllParticipating();
-  for (const groupId of Object.keys(chats)) {
-    await sock.sendMessage(groupId, {
-      text: 'اللَّهُمَّ صَلِّ وَسَلِّمْ عَلَى نَبِيِّنَا مُحَمَّدٍ'
-    });
+  for (const groupId in chats) {
+    await sock.sendMessage(groupId, { text: SALAWAT_MESSAGE });
   }
 }
 
-// 🕒 جلب مواقيت الصلاة من Aladhan API
-async function fetchPrayerTimes() {
-  try {
-    const today = moment().tz("Africa/Casablanca");
-    const dateStr = today.format("DD-MM-YYYY");
-    const url = `https://api.aladhan.com/v1/timingsByCity?city=Oujda&country=Morocco&method=3&date=${dateStr}`;
-    const response = await axios.get(url);
-    const timings = response.data.data.timings;
-
-    return {
-      Fajr: timings.Fajr,
-      Dhuhr: timings.Dhuhr,
-      Asr: timings.Asr,
-      Maghrib: timings.Maghrib,
-      Isha: timings.Isha
-    };
-  } catch (err) {
-    console.error('❌ Failed to fetch prayer times:', err.message);
-    return {};
-  }
-}
-
-// 🧠 تحقق من الصلوات الفائتة وإرسال Salawat مرة وحدة
-function monitorPrayerTimes(sock) {
+function monitorScheduledSalawat(sock) {
   setInterval(async () => {
     const now = moment().tz("Africa/Casablanca");
-    const times = await fetchPrayerTimes();
+    const hour = now.hour();
+    const minute = now.minute();
+    const day = now.day(); // 5 = الجمعة
+
+    // خارج وقت الإرسال
+    if (hour < 6 || hour >= 22) return;
+
+    const isFriday = day === 5;
+    const shouldSend = isFriday
+      ? minute === 0 || minute === 30
+      : minute === 0;
+
+    if (!shouldSend) return;
+
+    const currentSlot = `${now.format("YYYY-MM-DD-HH:mm")}`;
 
     let status = fs.existsSync(STATUS_FILE)
       ? JSON.parse(fs.readFileSync(STATUS_FILE))
       : {};
 
-    for (const [name, timeStr] of Object.entries(times)) {
-      const [hour, minute] = timeStr.split(':').map(Number);
-      const prayerTime = moment().tz("Africa/Casablanca").set({ hour, minute, second: 0 });
-
-      const alreadySentAt = status[name + '_sentAt'];
-      const sentRecently = alreadySentAt && now.diff(moment(alreadySentAt, "HH:mm:ss"), 'minutes') < 2;
-
-      if (now.isAfter(prayerTime) && !status[name] && !sentRecently) {
-        await sendToAllGroups(sock);
-        status[name] = true;
-        status[name + '_sentAt'] = now.format("HH:mm:ss");
-        fs.writeFileSync(STATUS_FILE, JSON.stringify(status));
-        console.log(`📤 تم إرسال الصلاة على النبي بعد ${name}`);
-      }
+    if (!status[currentSlot]) {
+      await sendToAllGroups(sock);
+      status[currentSlot] = true;
+      fs.writeFileSync(STATUS_FILE, JSON.stringify(status));
+      console.log(`📤 تم إرسال الصلاة على النبي ﷺ في ${currentSlot}`);
     }
   }, 60 * 1000); // كل دقيقة
 }
 
-// 🔄 إعادة تعيين الحالة يومياً
-function resetPrayerStatusDaily() {
-  setInterval(() => {
-    const now = moment().tz("Africa/Casablanca");
-    if (now.format("HH:mm") === "00:01") {
-      fs.writeFileSync(STATUS_FILE, JSON.stringify({}));
-      console.log("🔄 تم إعادة تعيين حالة الصلوات لليوم الجديد");
-    }
-  }, 60 * 1000);
-}
-
-// 🔌 تشغيل البوت
 async function startBot() {
-  try {
-    const { state, saveCreds } = await useMultiFileAuthState('auth');
-    const { version } = await fetchLatestBaileysVersion();
+  const { state, saveCreds } = await useMultiFileAuthState("auth");
+  const sock = makeWASocket({
+    auth: state,
+    printQRInTerminal: true,
+  });
 
-    const sock = makeWASocket({ version, auth: state });
-    sock.ev.on('creds.update', saveCreds);
+  sock.ev.on("creds.update", saveCreds);
 
-    sock.ev.on('connection.update', async (update) => {
-      const { qr, connection, lastDisconnect } = update;
-
-      if (qr) {
-        console.log('📱 Scan this QR code to log in:');
-        await QRCode.toString(qr, { type: 'terminal' }, (err, url) => {
-          if (err) return console.error('❌ QR generation failed:', err);
-          console.log(url);
-        });
+  sock.ev.on("connection.update", (update) => {
+    const { connection, lastDisconnect } = update;
+    if (connection === "close") {
+      const reason = new Boom(lastDisconnect?.error)?.output?.statusCode;
+      if (reason === DisconnectReason.loggedOut) {
+        console.log("❌ تم تسجيل الخروج. أعد تشغيل البوت لإعادة الاتصال.");
+      } else {
+        console.log("🔄 إعادة الاتصال...");
+        startBot();
       }
-
-      if (connection === 'close') {
-        const reason = lastDisconnect?.error?.message || 'unknown';
-        console.warn(`⚠️ Connection closed due to: ${reason}`);
-        console.log('🔁 Restarting bot...');
-        setTimeout(safeStart, 3000);
-      }
-
-      if (connection === 'open') {
-        console.log('✅ WhatsApp connection established');
-
-        if (!monitoringStarted) {
-          monitorPrayerTimes(sock);
-          resetPrayerStatusDaily();
-          monitoringStarted = true;
-          console.log('📡 مراقبة مواقيت الصلاة بدأت');
-        }
-      }
-    });
-
-    console.log('✅ Baileys bot is ready');
-  } catch (err) {
-    console.error('❌ Fatal error:', err.message);
-    console.log('🔁 Retrying in 5 seconds...');
-    setTimeout(safeStart, 5000);
-  }
-}
-
-// 🛡️ التفاف شامل لحماية البوت من الانطفاء
-function safeStart() {
-  startBot().catch((err) => {
-    console.error('❌ Uncaught error:', err.message);
-    console.log('🔁 Restarting bot in 5 seconds...');
-    setTimeout(safeStart, 5000);
+    } else if (connection === "open") {
+      console.log("✅ تم الاتصال بنجاح.");
+      monitorScheduledSalawat(sock);
+    }
   });
 }
 
-safeStart();
+startBot();
