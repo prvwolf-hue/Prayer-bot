@@ -1,6 +1,10 @@
 const axios = require('axios');
+const fs = require('fs');
+const moment = require('moment-timezone');
 const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const QRCode = require('qrcode');
+
+const STATUS_FILE = 'status.json';
 
 // 🕌 إرسال الصلاة لجميع الجروبات
 async function sendToAllGroups(text, sock) {
@@ -10,58 +14,54 @@ async function sendToAllGroups(text, sock) {
   }
 }
 
-// 🕒 جدولة Salawat حسب مواقيت الصلاة من Aladhan API
-async function scheduleSalawat(sock) {
-  async function fetchPrayerTimes() {
-    try {
-      const today = new Date();
-      const day = today.getDate();
-      const month = today.getMonth() + 1;
-      const year = today.getFullYear();
+// 🕒 جلب مواقيت الصلاة من Aladhan API
+async function fetchPrayerTimes() {
+  try {
+    const today = moment().tz("Africa/Casablanca");
+    const dateStr = today.format("DD-MM-YYYY");
+    const url = `https://api.aladhan.com/v1/timingsByCity?city=Oujda&country=Morocco&method=3&date=${dateStr}`;
+    const response = await axios.get(url);
+    const timings = response.data.data.timings;
 
-      const url = `https://api.aladhan.com/v1/timingsByCity?city=Berkane&country=Morocco&method=3&date=${day}-${month}-${year}`;
-      const response = await axios.get(url);
-      const timings = response.data.data.timings;
-
-      return {
-        Fajr: timings.Fajr,
-        Dhuhr: timings.Dhuhr,
-        Asr: timings.Asr,
-        Maghrib: timings.Maghrib,
-        Isha: timings.Isha
-      };
-    } catch (err) {
-      console.error('❌ Failed to fetch prayer times:', err.message);
-      return {};
-    }
+    return {
+      Fajr: timings.Fajr,
+      Dhuhr: timings.Dhuhr,
+      Asr: timings.Asr,
+      Maghrib: timings.Maghrib,
+      Isha: timings.Isha
+    };
+  } catch (err) {
+    console.error('❌ Failed to fetch prayer times:', err.message);
+    return {};
   }
+}
 
-  async function scheduleForTime(timeStr) {
-    const now = new Date();
-    const [hour, minute] = timeStr.split(':').map(Number);
-    const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, 0);
-    if (target < now) target.setDate(target.getDate() + 1);
-
-    const delay = target.getTime() - now.getTime();
-    setTimeout(() => {
-      sendToAllGroups('اللَّهُمَّ صَلِّ وَسَلِّمْ عَلَى نَبِيِّنَا مُحَمَّدٍ', sock);
-    }, delay);
-  }
-
-  async function dailySetup() {
+// 🧠 تحقق من الصلاة القادمة وإرسال Salawat
+function monitorPrayerTimes(sock) {
+  setInterval(async () => {
+    const now = moment().tz("Africa/Casablanca");
+    const currentTime = now.format("HH:mm");
     const times = await fetchPrayerTimes();
-    for (const time of Object.values(times)) {
-      await scheduleForTime(time);
+
+    for (const [name, timeStr] of Object.entries(times)) {
+      const [hour, minute] = timeStr.split(':').map(Number);
+      const prayerTime = moment().tz("Africa/Casablanca").set({ hour, minute, second: 0 });
+
+      const diff = prayerTime.diff(now, 'minutes');
+
+      // إذا بقينا 5 دقايق أو أقل على الصلاة، نرسل Salawat
+      if (diff >= 0 && diff <= 5) {
+        const lastSent = fs.existsSync(STATUS_FILE)
+          ? moment(JSON.parse(fs.readFileSync(STATUS_FILE)).lastSalawatSent)
+          : moment().subtract(1, 'day');
+
+        if (now.diff(lastSent, 'minutes') > 60) {
+          await sendToAllGroups(`🕌 اقترب وقت صلاة ${name}، لا تنسَ الصلاة على النبي ﷺ`, sock);
+          fs.writeFileSync(STATUS_FILE, JSON.stringify({ lastSalawatSent: now.toISOString() }));
+        }
+      }
     }
-  }
-
-  await dailySetup();
-
-  const millisTillMidnight = new Date().setHours(24, 0, 0, 0) - Date.now();
-  setTimeout(() => {
-    dailySetup();
-    setInterval(dailySetup, 24 * 60 * 60 * 1000);
-  }, millisTillMidnight);
+  }, 60 * 1000); // كل دقيقة
 }
 
 // 🔌 تشغيل البوت
@@ -93,8 +93,7 @@ async function startBot() {
 
       if (connection === 'open') {
         console.log('✅ WhatsApp connection established');
-        await sendToAllGroups('اللَّهُمَّ صَلِّ وَسَلِّمْ عَلَى نَبِيِّنَا مُحَمَّدٍ', sock);
-        scheduleSalawat(sock);
+        monitorPrayerTimes(sock); // مراقبة مستمرة للصلاة
       }
     });
 
