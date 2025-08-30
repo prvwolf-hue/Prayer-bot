@@ -20,7 +20,6 @@ function monitorScheduledSalawat(sock) {
     const minute = now.minute();
     const day = now.day(); // 5 = الجمعة
 
-    // خارج وقت الإرسال
     if (hour < 6 || hour >= 22) return;
 
     const isFriday = day === 5;
@@ -42,20 +41,36 @@ function monitorScheduledSalawat(sock) {
       fs.writeFileSync(STATUS_FILE, JSON.stringify(status));
       console.log(`📤 تم إرسال الصلاة على النبي ﷺ في ${currentSlot}`);
     }
-  }, 60 * 1000); // كل دقيقة
+  }, 60 * 1000);
+}
+
+function keepSessionAlive(sock) {
+  setInterval(async () => {
+    try {
+      await sock.sendPresenceUpdate("available");
+      console.log("🔄 Presence updated to keep session alive");
+    } catch (err) {
+      console.log("⚠️ Failed to update presence:", err.message);
+    }
+  }, 5 * 60 * 1000); // كل 5 دقائق
 }
 
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState("auth");
   const sock = makeWASocket({
     auth: state,
-    printQRInTerminal: true,
+    // تم حذف printQRInTerminal لأنه deprecated
   });
 
   sock.ev.on("creds.update", saveCreds);
 
   sock.ev.on("connection.update", (update) => {
-    const { connection, lastDisconnect } = update;
+    const { connection, lastDisconnect, qr } = update;
+
+    if (qr) {
+      console.log("📱 QR Code:", qr); // عرض QR إذا احتجت تسكانه من جديد
+    }
+
     if (connection === "close") {
       const reason = new Boom(lastDisconnect?.error)?.output?.statusCode;
       if (reason === DisconnectReason.loggedOut) {
@@ -67,6 +82,7 @@ async function startBot() {
     } else if (connection === "open") {
       console.log("✅ تم الاتصال بنجاح.");
       monitorScheduledSalawat(sock);
+      keepSessionAlive(sock);
     }
   });
 }
