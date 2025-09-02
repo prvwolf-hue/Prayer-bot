@@ -53,15 +53,23 @@ function keepSessionAlive(sock) {
     } catch (err) {
       console.log("⚠️ Failed to update presence:", err.message);
     }
-  }, 5 * 60 * 1000); // كل 5 دقائق
+  }, 5 * 60 * 1000);
+}
+
+function backupSession() {
+  setInterval(() => {
+    const source = "./auth/creds.json";
+    const backup = `./auth/backup-${Date.now()}.json`;
+    if (fs.existsSync(source)) {
+      fs.copyFileSync(source, backup);
+      console.log("🗂️ تم حفظ نسخة احتياطية للجلسة.");
+    }
+  }, 60 * 60 * 1000);
 }
 
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState("auth");
-  const sock = makeWASocket({
-    auth: state,
-    // تم حذف printQRInTerminal لأنه deprecated
-  });
+  const sock = makeWASocket({ auth: state });
 
   sock.ev.on("creds.update", saveCreds);
 
@@ -74,15 +82,24 @@ async function startBot() {
         if (err) {
           console.error("❌ فشل توليد QR:", err.message);
         } else {
-          console.log(asciiQR); // يطبع QR ASCII قابل للسكان من التيرمينال
+          console.log(asciiQR);
         }
       });
     }
 
     if (connection === "close") {
       const reason = new Boom(lastDisconnect?.error)?.output?.statusCode;
+
       if (reason === DisconnectReason.loggedOut) {
-        console.log("❌ تم تسجيل الخروج. أعد تشغيل البوت لإعادة الاتصال.");
+        console.log("⚠️ تم تسجيل الخروج من واتساب.");
+
+        const hasSession = fs.existsSync("./auth/creds.json");
+        if (hasSession) {
+          console.log("🔁 محاولة استرجاع الجلسة تلقائيًا...");
+          startBot();
+        } else {
+          console.log("📛 الجلسة غير موجودة. يلزم مسح auth/ وإعادة ربط QR.");
+        }
       } else {
         console.log("🔄 إعادة الاتصال...");
         startBot();
@@ -91,9 +108,9 @@ async function startBot() {
       console.log("✅ تم الاتصال بنجاح.");
       monitorScheduledSalawat(sock);
       keepSessionAlive(sock);
+      backupSession();
     }
   });
 }
 
 startBot();
-
