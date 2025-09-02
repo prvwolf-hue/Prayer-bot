@@ -21,14 +21,16 @@ function monitorScheduledSalawat(sock) {
     const minute = now.minute();
     const day = now.day(); // 5 = الجمعة
 
-    if (hour < 6 || hour >= 22) return;
+    if (hour < 6 || hour > 22) return;
 
-    const isFriday = day === 5;
-    const shouldSend = isFriday
-      ? minute === 0 || minute === 30
-      : minute === 0;
+   const isFriday = day === 5;
+   const shouldSend = isFriday
+  ? minute === 0 || minute === 30
+  : minute === 0;
 
-    if (!shouldSend) return;
+   const isAllowedTime = hour >= 6 && hour <= 22;
+   if (!shouldSend || !isAllowedTime) return;
+
 
     const currentSlot = `${now.format("YYYY-MM-DD-HH:mm")}`;
 
