@@ -93,6 +93,15 @@ function cleanStatusFileDaily() {
   }, 24 * 60 * 60 * 1000);
 }
 
+function monitorConnection(sock) {
+  setInterval(() => {
+    if (!sock?.user) {
+      console.log("🔄 الجلسة مقطوعة، إعادة الاتصال...");
+      startBot();
+    }
+  }, 10 * 60 * 1000);
+}
+
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState("auth");
   const sock = makeWASocket({ auth: state });
@@ -140,6 +149,7 @@ async function startBot() {
       keepSessionAlive(sock);
       backupSession();
       cleanStatusFileDaily();
+      monitorConnection(sock);
     }
   });
 }
