@@ -8,9 +8,18 @@ const STATUS_FILE = "./status.json";
 const SALAWAT_MESSAGE = "اللَّهُمَّ صَلِّ وَسَلِّمْ عَلَى نَبِيِّنَا مُحَمَّدٍ";
 
 async function sendToAllGroups(sock) {
-  const chats = await sock.groupFetchAllParticipating();
-  for (const groupId in chats) {
-    await sock.sendMessage(groupId, { text: SALAWAT_MESSAGE });
+  if (!sock?.user) {
+    console.log("⚠️ الاتصال غير جاهز، تأجيل الإرسال...");
+    return;
+  }
+
+  try {
+    const chats = await sock.groupFetchAllParticipating();
+    for (const groupId in chats) {
+      await sock.sendMessage(groupId, { text: SALAWAT_MESSAGE });
+    }
+  } catch (err) {
+    console.error("❌ فشل إرسال الرسالة:", err.message);
   }
 }
 
@@ -23,14 +32,12 @@ function monitorScheduledSalawat(sock) {
 
     if (hour < 6 || hour > 22) return;
 
-   const isFriday = day === 5;
-   const shouldSend = isFriday
-  ? minute === 0 || minute === 30
-  : minute === 0;
+    const isFriday = day === 5;
+    const shouldSend = isFriday
+      ? minute === 0 || minute === 30
+      : minute === 0;
 
-   const isAllowedTime = hour >= 6 && hour <= 22;
-   if (!shouldSend || !isAllowedTime) return;
-
+    if (!shouldSend) return;
 
     const currentSlot = `${now.format("YYYY-MM-DD-HH:mm")}`;
 
@@ -50,6 +57,10 @@ function monitorScheduledSalawat(sock) {
 function keepSessionAlive(sock) {
   setInterval(async () => {
     try {
+      if (!sock?.user) {
+        console.log("⚠️ الاتصال غير جاهز، تخطي تحديث الحضور.");
+        return;
+      }
       await sock.sendPresenceUpdate("available");
       console.log("🔄 Presence updated to keep session alive");
     } catch (err) {
@@ -106,9 +117,13 @@ async function startBot() {
         console.log("🔄 إعادة الاتصال...");
         startBot();
       }
-    } else if (connection === "open") {
+    }
+
+    if (connection === "open") {
       console.log("✅ تم الاتصال بنجاح.");
-      monitorScheduledSalawat(sock);
+      setTimeout(() => {
+        monitorScheduledSalawat(sock);
+      }, 5000); // تأخير بسيط لضمان الجاهزية
       keepSessionAlive(sock);
       backupSession();
     }
