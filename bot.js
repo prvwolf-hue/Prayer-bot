@@ -10,7 +10,7 @@ const SALAWAT_MESSAGE = "اللَّهُمَّ صَلِّ وَسَلِّمْ عَ
 async function sendToAllGroups(sock) {
   if (!sock?.user) {
     console.log("⚠️ الاتصال غير جاهز، تأجيل الإرسال...");
-    return;
+    return false;
   }
 
   try {
@@ -18,8 +18,10 @@ async function sendToAllGroups(sock) {
     for (const groupId in chats) {
       await sock.sendMessage(groupId, { text: SALAWAT_MESSAGE });
     }
+    return true;
   } catch (err) {
     console.error("❌ فشل إرسال الرسالة:", err.message);
+    return false;
   }
 }
 
@@ -46,10 +48,14 @@ function monitorScheduledSalawat(sock) {
       : {};
 
     if (!status[currentSlot]) {
-      await sendToAllGroups(sock);
-      status[currentSlot] = true;
-      fs.writeFileSync(STATUS_FILE, JSON.stringify(status));
-      console.log(`📤 تم إرسال الصلاة على النبي ﷺ في ${currentSlot}`);
+      const success = await sendToAllGroups(sock);
+      if (success) {
+        status[currentSlot] = true;
+        fs.writeFileSync(STATUS_FILE, JSON.stringify(status));
+        console.log(`📤 تم إرسال الصلاة على النبي ﷺ في ${currentSlot}`);
+      } else {
+        console.log("⚠️ فشل الإرسال، سيتم إعادة المحاولة لاحقًا.");
+      }
     }
   }, 60 * 1000);
 }
@@ -78,6 +84,13 @@ function backupSession() {
       console.log("🗂️ تم حفظ نسخة احتياطية للجلسة.");
     }
   }, 60 * 60 * 1000);
+}
+
+function cleanStatusFileDaily() {
+  setInterval(() => {
+    fs.writeFileSync(STATUS_FILE, JSON.stringify({}));
+    console.log("🧹 تم تنظيف status.json لتفادي التعارض.");
+  }, 24 * 60 * 60 * 1000);
 }
 
 async function startBot() {
@@ -123,9 +136,10 @@ async function startBot() {
       console.log("✅ تم الاتصال بنجاح.");
       setTimeout(() => {
         monitorScheduledSalawat(sock);
-      }, 5000); // تأخير بسيط لضمان الجاهزية
+      }, 5000);
       keepSessionAlive(sock);
       backupSession();
+      cleanStatusFileDaily();
     }
   });
 }
