@@ -16,8 +16,25 @@ async function startBot() {
     // ✅ طباعة QR مرة وحدة فقط
     if (qr && !qrPrinted) {
       qrPrinted = true;
+
+      // طباعة فـ التيرمينال
       qrcodeTerminal.generate(qr, { small: true });
-      await QRCode.toFile("./public/qr.png", qr);
+
+      // إنشاء مجلد public إذا ما كانش
+      if (!fs.existsSync("./public")) {
+        fs.mkdirSync("./public");
+      }
+
+      // حفظ صورة QR بجودة عالية
+      await QRCode.toFile("./public/qr.png", qr, {
+        margin: 2,
+        width: 300,
+        color: {
+          dark: "#000000",
+          light: "#FFFFFF"
+        }
+      });
+
       console.log("✅ QR محفوظ في /public/qr.png");
     }
 
