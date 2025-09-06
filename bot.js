@@ -1,64 +1,63 @@
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require("@whiskeysockets/baileys");
 const { Boom } = require("@hapi/boom");
-const qrcodeTerminal = require("qrcode-terminal");
-const QRCode = require("qrcode");
+const QRCode = require("qrcode-terminal");
 const fs = require("fs");
+const path = require("path");
+const schedule = require("node-schedule");
+const moment = require("moment-timezone");
 
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState("auth");
-  const sock = makeWASocket({ auth: state });
+  const sock = makeWASocket({
+    auth: state,
+    printQRInTerminal: true,
+  });
 
-  let qrPrinted = false;
+  sock.ev.on("creds.update", saveCreds);
 
   sock.ev.on("connection.update", async (update) => {
     const { connection, lastDisconnect, qr } = update;
 
-    // ✅ طباعة QR مرة وحدة فقط
-    if (qr && !qrPrinted) {
-      qrPrinted = true;
-
-      // طباعة فـ التيرمينال
-      qrcodeTerminal.generate(qr, { small: true });
-
-      // إنشاء مجلد public إذا ما كانش
-      if (!fs.existsSync("./public")) {
-        fs.mkdirSync("./public");
-      }
-
-      // حفظ صورة QR بجودة عالية
-      await QRCode.toFile("./public/qr.png", qr, {
-        margin: 2,
-        width: 300,
-        color: {
-          dark: "#000000",
-          light: "#FFFFFF"
-        }
-      });
-
-      console.log("✅ QR محفوظ في /public/qr.png");
+    if (qr) {
+      QRCode.generate(qr, { small: true });
     }
 
-    // 🔁 إعادة الاتصال تلقائيًا
     if (connection === "close") {
       const reason = new Boom(lastDisconnect?.error)?.output?.statusCode;
-      console.log("❌ الاتصال تقطع، السبب:", reason);
 
       if (reason === DisconnectReason.loggedOut) {
-        console.log("🔒 تم تسجيل الخروج، حذف الجلسة وإعادة التشغيل...");
-        fs.rmSync("auth", { recursive: true, force: true });
+        console.log("❌ تم تسجيل الخروج. حذف الجلسة...");
+        fs.rmSync("./auth", { recursive: true, force: true });
       }
 
-      setTimeout(() => {
-        startBot(); // إعادة التشغيل
-      }, 5000);
+      console.log("🔄 إعادة تشغيل البوت بعد الانقطاع...");
+      setTimeout(() => startBot(), 5000);
     }
 
     if (connection === "open") {
-      console.log("✅ البوت متصل بنجاح");
+      console.log("✅ تم الاتصال بنجاح.");
+      scheduleSalawat(sock);
     }
   });
+}
 
-  sock.ev.on("creds.update", saveCreds);
+function scheduleSalawat(sock) {
+  const times = ["09:00", "12:00", "15:00", "18:00", "21:00"];
+  const timezone = "Africa/Casablanca";
+
+  times.forEach((time) => {
+    const [hour, minute] = time.split(":");
+    schedule.scheduleJob({ hour: +hour, minute: +minute, tz: timezone }, async () => {
+      try {
+        const message = "اللهم صل وسلم وبارك على سيدنا محمد 🌸";
+        const jid = "YOUR_GROUP_ID_HERE@g.us"; // عوّضه بالآيدي ديال القروب
+        await sock.sendMessage(jid, { text: message });
+        console.log(`📤 تم إرسال الصلاة في ${time}`);
+      } catch (err) {
+        console.error("⚠️ خطأ في إرسال الصلاة:", err.message);
+      }
+    });
+  });
 }
 
 startBot();
