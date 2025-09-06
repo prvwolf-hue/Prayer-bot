@@ -1,4 +1,4 @@
-const qrcode = require("qrcode-terminal"); // بدل QRCode العادي
+const QRCode = require("qrcode");
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require("@whiskeysockets/baileys");
 const { Boom } = require("@hapi/boom");
 const fs = require("fs");
@@ -8,11 +8,7 @@ const STATUS_FILE = "./status.json";
 const SALAWAT_MESSAGE = "اللَّهُمَّ صَلِّ وَسَلِّمْ عَلَى نَبِيِّنَا مُحَمَّدٍ";
 
 async function sendToAllGroups(sock) {
-  if (!sock?.user) {
-    console.log("⚠️ الاتصال غير جاهز، تأجيل الإرسال...");
-    return false;
-  }
-
+  if (!sock?.user) return false;
   try {
     const chats = await sock.groupFetchAllParticipating();
     for (const groupId in chats) {
@@ -35,14 +31,10 @@ function monitorScheduledSalawat(sock) {
     if (hour < 6 || hour > 22) return;
 
     const isFriday = day === 5;
-    const shouldSend = isFriday
-      ? minute === 0 || minute === 30
-      : minute === 0;
-
+    const shouldSend = isFriday ? minute === 0 || minute === 30 : minute === 0;
     if (!shouldSend) return;
 
-    const currentSlot = `${now.format("YYYY-MM-DD-HH:mm")}`;
-
+    const currentSlot = now.format("YYYY-MM-DD-HH:mm");
     let status = fs.existsSync(STATUS_FILE)
       ? JSON.parse(fs.readFileSync(STATUS_FILE))
       : {};
@@ -53,8 +45,6 @@ function monitorScheduledSalawat(sock) {
         status[currentSlot] = true;
         fs.writeFileSync(STATUS_FILE, JSON.stringify(status));
         console.log(`📤 تم إرسال الصلاة على النبي ﷺ في ${currentSlot}`);
-      } else {
-        console.log("⚠️ فشل الإرسال، سيتم إعادة المحاولة لاحقًا.");
       }
     }
   }, 60 * 1000);
@@ -62,13 +52,10 @@ function monitorScheduledSalawat(sock) {
 
 function keepSessionAlive(sock) {
   setInterval(async () => {
+    if (!sock?.user) return;
     try {
-      if (!sock?.user) {
-        console.log("⚠️ الاتصال غير جاهز، تخطي تحديث الحضور.");
-        return;
-      }
       await sock.sendPresenceUpdate("available");
-      console.log("🔄 Presence updated to keep session alive");
+      console.log("🔄 Presence updated");
     } catch (err) {
       console.log("⚠️ Failed to update presence:", err.message);
     }
@@ -89,7 +76,7 @@ function backupSession() {
 function cleanStatusFileDaily() {
   setInterval(() => {
     fs.writeFileSync(STATUS_FILE, JSON.stringify({}));
-    console.log("🧹 تم تنظيف status.json لتفادي التعارض.");
+    console.log("🧹 تم تنظيف status.json.");
   }, 24 * 60 * 60 * 1000);
 }
 
@@ -108,17 +95,21 @@ async function startBot() {
 
   sock.ev.on("creds.update", saveCreds);
 
-  sock.ev.on("connection.update", (update) => {
+  sock.ev.on("connection.update", async (update) => {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
-      console.log("📱 QR Code received. مناسب للجوال:");
-      qrcode.generate(qr, { small: true }); // 👈 حجم صغير
+      console.log("📱 تم توليد QR، حفظه كصورة...");
+      try {
+        await QRCode.toFile("./qr.png", qr);
+        console.log("✅ تم حفظ QR في qr.png");
+      } catch (err) {
+        console.error("❌ فشل حفظ QR:", err.message);
+      }
     }
 
     if (connection === "close") {
       const reason = new Boom(lastDisconnect?.error)?.output?.statusCode;
-
       if (reason === DisconnectReason.loggedOut) {
         console.log("❌ تم تسجيل الخروج. حذف الجلسة...");
         fs.rmSync("./auth", { recursive: true, force: true });
@@ -127,15 +118,13 @@ async function startBot() {
         console.log("🔄 محاولة إعادة الاتصال...");
         startBot();
       } else {
-        console.log("⚠️ الاتصال مغلق مؤقتًا، الانتظار...");
+        console.log("⚠️ الاتصال مغلق مؤقتًا.");
       }
     }
 
     if (connection === "open") {
       console.log("✅ تم الاتصال بنجاح.");
-      setTimeout(() => {
-        monitorScheduledSalawat(sock);
-      }, 5000);
+      setTimeout(() => monitorScheduledSalawat(sock), 5000);
       keepSessionAlive(sock);
       backupSession();
       cleanStatusFileDaily();
