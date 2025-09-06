@@ -1,4 +1,4 @@
-const QRCode = require("qrcode");
+const qrcode = require("qrcode-terminal"); // بدل QRCode العادي
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require("@whiskeysockets/baileys");
 const { Boom } = require("@hapi/boom");
 const fs = require("fs");
@@ -112,32 +112,22 @@ async function startBot() {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
-      console.log("📱 QR Code received. Rendering in terminal...");
-      QRCode.toString(qr, { type: "terminal" }, (err, asciiQR) => {
-        if (err) {
-          console.error("❌ فشل توليد QR:", err.message);
-        } else {
-          console.log(asciiQR);
-        }
-      });
+      console.log("📱 QR Code received. مناسب للجوال:");
+      qrcode.generate(qr, { small: true }); // 👈 حجم صغير
     }
 
     if (connection === "close") {
       const reason = new Boom(lastDisconnect?.error)?.output?.statusCode;
 
       if (reason === DisconnectReason.loggedOut) {
-        console.log("⚠️ تم تسجيل الخروج من واتساب.");
-
-        const hasSession = fs.existsSync("./auth/creds.json");
-        if (hasSession) {
-          console.log("🔁 محاولة استرجاع الجلسة تلقائيًا...");
-          startBot();
-        } else {
-          console.log("📛 الجلسة غير موجودة. يلزم مسح auth/ وإعادة ربط QR.");
-        }
-      } else {
-        console.log("🔄 إعادة الاتصال...");
+        console.log("❌ تم تسجيل الخروج. حذف الجلسة...");
+        fs.rmSync("./auth", { recursive: true, force: true });
         startBot();
+      } else if (reason !== DisconnectReason.connectionClosed) {
+        console.log("🔄 محاولة إعادة الاتصال...");
+        startBot();
+      } else {
+        console.log("⚠️ الاتصال مغلق مؤقتًا، الانتظار...");
       }
     }
 
