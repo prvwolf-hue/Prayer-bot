@@ -1,63 +1,40 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require("@whiskeysockets/baileys");
-const { Boom } = require("@hapi/boom");
-const QRCode = require("qrcode-terminal");
-const fs = require("fs");
-const path = require("path");
-const schedule = require("node-schedule");
+const { default: makeWASocket, useMultiFileAuthState } = require("@whiskeysockets/baileys");
 const moment = require("moment-timezone");
 
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState("auth");
-  const sock = makeWASocket({
-    auth: state,
-    printQRInTerminal: true,
-  });
+  const sock = makeWASocket({ auth: state });
 
   sock.ev.on("creds.update", saveCreds);
-
-  sock.ev.on("connection.update", async (update) => {
-    const { connection, lastDisconnect, qr } = update;
-
-    if (qr) {
-      QRCode.generate(qr, { small: true });
-    }
-
-    if (connection === "close") {
-      const reason = new Boom(lastDisconnect?.error)?.output?.statusCode;
-
-      if (reason === DisconnectReason.loggedOut) {
-        console.log("❌ تم تسجيل الخروج. حذف الجلسة...");
-        fs.rmSync("./auth", { recursive: true, force: true });
-      }
-
-      console.log("🔄 إعادة تشغيل البوت بعد الانقطاع...");
-      setTimeout(() => startBot(), 5000);
-    }
-
-    if (connection === "open") {
-      console.log("✅ تم الاتصال بنجاح.");
-      scheduleSalawat(sock);
-    }
-  });
+  scheduleSalawat(sock);
 }
 
 function scheduleSalawat(sock) {
-  const times = ["09:00", "12:00", "15:00", "18:00", "21:00"];
-  const timezone = "Africa/Casablanca";
+  setInterval(async () => {
+    const now = moment().tz("Africa/Casablanca");
+    const hour = now.hour();
+    const minute = now.minute();
+    const day = now.day(); // 5 = الجمعة
 
-  times.forEach((time) => {
-    const [hour, minute] = time.split(":");
-    schedule.scheduleJob({ hour: +hour, minute: +minute, tz: timezone }, async () => {
+    const isFriday = day === 5;
+    const withinTime = hour >= 6 && hour <= 22;
+    const shouldSend = isFriday ? minute === 0 || minute === 30 : minute === 0;
+
+    if (withinTime && shouldSend) {
       try {
-        const message = "اللهم صل وسلم وبارك على سيدنا محمد 🌸";
-        const jid = "YOUR_GROUP_ID_HERE@g.us"; // عوّضه بالآيدي ديال القروب
-        await sock.sendMessage(jid, { text: message });
-        console.log(`📤 تم إرسال الصلاة في ${time}`);
+        const message = "اللَّهُمَّ صَلِّ وَسَلِّمْ عَلَى نَبِيِّنَا مُحَمَّدٍ ";
+        const chats = await sock.groupFetchAllParticipating();
+
+        for (const groupId of Object.keys(chats)) {
+          await sock.sendMessage(groupId, { text: message });
+        }
+
+        console.log(`📤 ${now.format("dddd HH:mm")} - تم الإرسال`);
       } catch (err) {
-        console.error("⚠️ خطأ في إرسال الصلاة:", err.message);
+        console.error("❌ فشل الإرسال:", err.message);
       }
-    });
-  });
+    }
+  }, 60 * 1000); // كل دقيقة
 }
 
 startBot();
