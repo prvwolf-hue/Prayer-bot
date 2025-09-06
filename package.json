@@ -2,9 +2,9 @@
   "name": "prayerbot",
   "version": "1.0.0",
   "description": "WhatsApp bot for sending salawat",
-  "main": "index.js",
+  "main": "main.js",
   "scripts": {
-    "start": "node index.js"
+  "start": "node main.js"
   },
   "dependencies": {
     "moment-timezone": "^0.5.43",
