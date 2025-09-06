@@ -3,9 +3,27 @@ const moment = require("moment-timezone");
 
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState("auth");
-  const sock = makeWASocket({ auth: state });
+  const sock = makeWASocket({
+  auth: state,
+  printQRInTerminal: true,
+  connectTimeoutMs: 60_000,
+  emitOwnEvents: true,
+  defaultQueryTimeoutMs: 60_000,
+  shouldIgnoreJid: () => false,
+  getMessage: async () => ({ conversation: "رسالة تلقائية" })
+});
 
-  sock.ev.on("creds.update", saveCreds);
+
+  sock.ev.on("connection.update", (update) => {
+  const { connection, lastDisconnect } = update;
+  if (connection === "close") {
+    const reason = lastDisconnect?.error?.message;
+    console.log("🔌 الاتصال تقطع:", reason);
+    startBot(); // إعادة الربط تلقائياً
+  } else if (connection === "open") {
+    console.log("✅ البوت مربوط بـ WhatsApp");
+  }
+});
   scheduleSalawat(sock);
 }
 
