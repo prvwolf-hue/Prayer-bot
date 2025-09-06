@@ -132,4 +132,5 @@ dist
 # Replit debugger
 .breakpoints
 
-!auth_info/
+!auth/
+
