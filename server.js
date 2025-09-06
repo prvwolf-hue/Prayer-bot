@@ -1,10 +1,7 @@
 const express = require("express");
-const path = require("path");
 const app = express();
 
-// 🖼️ عرض صورة QR من مجلد public
-app.use("/qr", express.static(path.join(__dirname, "public")));
-
+// ✅ واجهة تأكيد التشغيل
 app.get("/", (req, res) => {
   res.send(`
     <html>
@@ -12,7 +9,7 @@ app.get("/", (req, res) => {
       <body style="font-family: sans-serif; text-align: center; margin-top: 50px;">
         <h1>🟢 Prayerbot شغال — الحمد لله</h1>
         <p>البوت يصلي على النبي ﷺ تلقائيًا كل ساعة أو نصف ساعة حسب اليوم.</p>
-        <p><a href="/qr/qr.png" target="_blank">📷 عرض رمز QR</a></p>
+        <p>نسخة مستقرة بدون تدخل بشري، ونسألكم الدعاء بالخير.</p>
       </body>
     </html>
   `);
